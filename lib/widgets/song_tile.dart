@@ -25,53 +25,51 @@ class SongTile extends StatelessWidget {
       builder: (context, _) {
         final isActive = playerService.currentSong?.id == song.id;
 
-        return Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
           child: Material(
             color: Colors.transparent,
+            borderRadius: BorderRadius.circular(16),
             child: InkWell(
-              onTap: () {
-                playerService.playSong(song, playlist);
-              },
-              borderRadius: BorderRadius.circular(14),
-              splashColor: AppTheme.accentYellow.withValues(alpha: 0.1),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              onTap: () => playerService.playSong(song, playlist),
+              borderRadius: BorderRadius.circular(16),
+              splashColor: AppTheme.accentBlue.withValues(alpha: 0.1),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOutCubic,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(14),
-                  color: isActive 
-                    ? AppTheme.accentBlue.withValues(alpha: 0.15)
-                    : Colors.transparent,
-                  border: isActive
-                    ? Border.all(color: AppTheme.accentYellow.withValues(alpha: 0.3), width: 1)
-                    : null,
+                  borderRadius: BorderRadius.circular(16),
+                  // Pill active style comme le mockup
+                  gradient: isActive ? AppTheme.pillGradient : null,
+                  color: isActive ? null : Colors.transparent,
                 ),
                 child: Row(
                   children: [
-                    // Numéro ou indicateur de lecture
+                    // Index
                     SizedBox(
-                      width: 28,
+                      width: 22,
                       child: isActive
                           ? const _PlayingIndicator()
                           : Text(
-                              '${index + 1}',
+                              '${index + 1}'.padLeft(2, '0'),
                               style: TextStyle(
-                                color: AppTheme.grey.withValues(alpha: 0.6),
-                                fontSize: 13,
+                                color: AppTheme.greyMuted.withValues(alpha: 0.6),
+                                fontSize: 12,
                                 fontWeight: FontWeight.w500,
                               ),
                               textAlign: TextAlign.center,
                             ),
                     ),
                     const SizedBox(width: 12),
-                    // Artwork
+                    // Artwork circulaire
                     ArtworkWidget(
                       artwork: song.artwork,
-                      size: 48,
-                      borderRadius: 10,
+                      size: 44,
+                      circular: true,
                     ),
-                    const SizedBox(width: 14),
-                    // Infos
+                    const SizedBox(width: 12),
+                    // Titre & artiste
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -79,19 +77,21 @@ class SongTile extends StatelessWidget {
                           Text(
                             song.title,
                             style: TextStyle(
-                              color: isActive ? AppTheme.accentYellow : AppTheme.white,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w500,
+                              color: AppTheme.white,
+                              fontSize: 14,
+                              fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          const SizedBox(height: 3),
+                          const SizedBox(height: 2),
                           Text(
                             song.artistDisplay,
-                            style: const TextStyle(
-                              color: AppTheme.grey,
-                              fontSize: 13,
+                            style: TextStyle(
+                              color: isActive
+                                  ? AppTheme.softWhite.withValues(alpha: 0.7)
+                                  : AppTheme.greyMuted,
+                              fontSize: 12,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -99,15 +99,22 @@ class SongTile extends StatelessWidget {
                         ],
                       ),
                     ),
-                    // Durée
-                    Text(
-                      song.durationFormatted,
-                      style: TextStyle(
-                        color: AppTheme.grey.withValues(alpha: 0.7),
-                        fontSize: 13,
+                    // Trois points menu
+                    SizedBox(
+                      width: 30,
+                      height: 30,
+                      child: IconButton(
+                        icon: Icon(
+                          Icons.more_horiz,
+                          color: isActive
+                              ? AppTheme.softWhite.withValues(alpha: 0.7)
+                              : AppTheme.greyMuted,
+                          size: 20,
+                        ),
+                        onPressed: () {},
+                        padding: EdgeInsets.zero,
                       ),
                     ),
-                    const SizedBox(width: 4),
                   ],
                 ),
               ),
@@ -136,12 +143,12 @@ class _PlayingIndicatorState extends State<_PlayingIndicator>
     super.initState();
     _controllers = List.generate(3, (i) {
       return AnimationController(
-        duration: Duration(milliseconds: 400 + i * 150),
+        duration: Duration(milliseconds: 350 + i * 120),
         vsync: this,
       )..repeat(reverse: true);
     });
     _animations = _controllers.map((c) {
-      return Tween<double>(begin: 4, end: 16).animate(
+      return Tween<double>(begin: 3, end: 13).animate(
         CurvedAnimation(parent: c, curve: Curves.easeInOut),
       );
     }).toList();
@@ -164,11 +171,11 @@ class _PlayingIndicatorState extends State<_PlayingIndicator>
           animation: _animations[i],
           builder: (context, _) {
             return Container(
-              width: 3,
+              width: 2.5,
               height: _animations[i].value,
               margin: const EdgeInsets.symmetric(horizontal: 1),
               decoration: BoxDecoration(
-                color: AppTheme.accentYellow,
+                color: AppTheme.white,
                 borderRadius: BorderRadius.circular(2),
               ),
             );
