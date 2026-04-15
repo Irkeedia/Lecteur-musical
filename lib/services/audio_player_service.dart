@@ -1,8 +1,26 @@
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import '../models/song.dart';
 
 enum SunoRepeatMode { off, all, one }
+
+bool _sameSongMultiset(List<Song> a, List<Song> b) {
+  if (a.length != b.length) return false;
+  final ma = <int, int>{};
+  final mb = <int, int>{};
+  for (final s in a) {
+    ma[s.id] = (ma[s.id] ?? 0) + 1;
+  }
+  for (final s in b) {
+    mb[s.id] = (mb[s.id] ?? 0) + 1;
+  }
+  if (ma.length != mb.length) return false;
+  for (final e in ma.entries) {
+    if (mb[e.key] != e.value) return false;
+  }
+  return true;
+}
 
 class AudioPlayerService extends ChangeNotifier {
   final AudioPlayer _player = AudioPlayer();
@@ -31,6 +49,13 @@ class AudioPlayerService extends ChangeNotifier {
   bool get hasSong => currentSong != null;
 
   AudioPlayerService() {
+    AudioSession.instance.then((session) {
+      session.interruptionEventStream.listen((event) {
+        if (event.begin && event.type == AudioInterruptionType.pause) {
+          _player.pause();
+        }
+      });
+    });
     _player.positionStream.listen((pos) {
       _position = pos;
       notifyListeners();
@@ -70,6 +95,8 @@ class AudioPlayerService extends ChangeNotifier {
   Future<void> _loadAndPlay() async {
     if (currentSong == null) return;
     try {
+      final session = await AudioSession.instance;
+      await session.setActive(true);
       await _player.setAudioSource(AudioSource.uri(Uri.parse(currentSong!.uri)));
       await _player.play();
     } catch (e) {
@@ -81,6 +108,8 @@ class AudioPlayerService extends ChangeNotifier {
     if (_isPlaying) {
       await _player.pause();
     } else {
+      final session = await AudioSession.instance;
+      await session.setActive(true);
       await _player.play();
     }
   }
@@ -124,6 +153,25 @@ class AudioPlayerService extends ChangeNotifier {
   void toggleShuffle() {
     _isShuffled = !_isShuffled;
     if (_isShuffled) {
+      _shuffleOrder = List.generate(_playlist.length, (i) => i)..shuffle();
+    }
+    notifyListeners();
+  }
+
+  /// Réordonne la file si [newOrder] contient exactement les mêmes pistes que la file actuelle
+  /// (comme un tri Spotify : l’ordre à l’écran = ordre de lecture suivant).
+  void applyQueueReorderIfSameTracks(List<Song> newOrder) {
+    if (_playlist.isEmpty || newOrder.isEmpty) return;
+    if (!_sameSongMultiset(_playlist, newOrder)) return;
+    final cur = currentSong;
+    _playlist = List<Song>.from(newOrder);
+    if (cur != null) {
+      _currentIndex = _playlist.indexWhere((s) => s.id == cur.id);
+      if (_currentIndex < 0) _currentIndex = 0;
+    } else {
+      _currentIndex = _currentIndex.clamp(0, _playlist.length - 1);
+    }
+    if (_isShuffled && _playlist.isNotEmpty) {
       _shuffleOrder = List.generate(_playlist.length, (i) => i)..shuffle();
     }
     notifyListeners();

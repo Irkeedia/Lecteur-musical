@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import '../models/song.dart';
+import '../models/song_sort.dart';
 import '../services/audio_player_service.dart';
 import '../services/music_library_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/song_tile.dart';
+import '../widgets/lazy_song_artwork.dart';
 import '../widgets/mini_player.dart';
 import 'player_screen.dart';
 import 'search_screen.dart';
@@ -20,7 +22,9 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
   final MusicLibraryService _libraryService = MusicLibraryService();
+  List<Song> _rawSongs = [];
   List<Song> _allSongs = [];
+  SongSortMode _sortMode = SongSortMode.titleAsc;
   bool _isLoading = true;
   int _currentNavIndex = 0;
   late AnimationController _shimmerController;
@@ -34,47 +38,77 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     _shimmerController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
-    )..repeat();
+    );
     _loadSongs();
   }
 
   Future<void> _loadSongs() async {
     setState(() => _isLoading = true);
-    final songs = await _libraryService.getAllSongs();
-    // Grouper par album
+    _shimmerController.repeat();
+    _libraryService.clearArtworkCache();
+    try {
+      final songs = await _libraryService.getAllSongs();
+      final sorted = sortSongs(songs, _sortMode);
+      final albums = _groupAlbums(sorted);
+      setState(() {
+        _rawSongs = songs;
+        _allSongs = sorted;
+        _albums = albums;
+        _isLoading = false;
+      });
+      widget.playerService.applyQueueReorderIfSameTracks(_allSongs);
+    } catch (e, st) {
+      debugPrint('Scan bibliothèque: $e\n$st');
+      setState(() {
+        _rawSongs = [];
+        _allSongs = [];
+        _albums = {};
+        _isLoading = false;
+      });
+    } finally {
+      _shimmerController.stop();
+    }
+  }
+
+  Map<String, List<Song>> _groupAlbums(List<Song> songs) {
     final Map<String, List<Song>> albums = {};
     for (final song in songs) {
       final albumKey = song.albumDisplay;
       albums.putIfAbsent(albumKey, () => []);
       albums[albumKey]!.add(song);
     }
+    return albums;
+  }
+
+  void _setSortMode(SongSortMode mode) {
+    if (mode == _sortMode) return;
     setState(() {
-      _allSongs = songs;
-      _albums = albums;
-      _isLoading = false;
+      _sortMode = mode;
+      _allSongs = sortSongs(_rawSongs, _sortMode);
+      _albums = _groupAlbums(_allSongs);
     });
+    widget.playerService.applyQueueReorderIfSameTracks(_allSongs);
   }
 
   void _openPlayer() {
     if (widget.playerService.currentSong == null) return;
     Navigator.of(context).push(
       PageRouteBuilder(
+        opaque: false,
         pageBuilder: (context, animation, secondaryAnimation) {
           return PlayerScreen(playerService: widget.playerService);
         },
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          return FadeTransition(
-            opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
-            child: SlideTransition(
-              position: Tween(
-                begin: const Offset(0.0, 0.04),
-                end: Offset.zero,
-              ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+          final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+          return SlideTransition(
+            position: Tween(begin: const Offset(0, 1), end: Offset.zero).animate(curved),
+            child: FadeTransition(
+              opacity: curved,
               child: child,
             ),
           );
         },
-        transitionDuration: const Duration(milliseconds: 400),
+        transitionDuration: const Duration(milliseconds: 380),
       ),
     );
   }
@@ -124,6 +158,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           allSongs: _allSongs,
           albums: _albums,
           onRefresh: _loadSongs,
+          sortMode: _sortMode,
+          onSortChanged: _setSortMode,
         ),
       ],
     );
@@ -215,9 +251,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           SliverToBoxAdapter(child: _buildSectionTitle('Albums', _albums.length)),
           SliverToBoxAdapter(child: _buildAlbumsRow()),
         ],
-        // Tous les titres
+        // Tous les titres + tri
         SliverToBoxAdapter(
-          child: _buildSectionTitle('Tous les titres', _allSongs.length),
+          child: _buildTitresSectionHeader(),
         ),
         // Liste des chansons
         SliverList(
@@ -284,27 +320,33 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // Background image ou gradient
-              if (heroSong.artwork != null)
-                Image.memory(
-                  heroSong.artwork!,
+              Positioned.fill(
+                child: FittedBox(
                   fit: BoxFit.cover,
-                  gaplessPlayback: true,
-                )
-              else
-                Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Color(0xFF3B52CC),
-                        Color(0xFF8B5CF6),
-                        Color(0xFFD946EF),
-                      ],
+                  child: SizedBox(
+                    width: 480,
+                    height: 480,
+                    child: LazySongArtwork(
+                      song: heroSong,
+                      size: 480,
+                      borderRadius: 0,
                     ),
                   ),
                 ),
+              ),
+              Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Color(0x553B52CC),
+                      Color(0x668B5CF6),
+                      Color(0x88D946EF),
+                    ],
+                  ),
+                ),
+              ),
               // Overlay gradient sombre
               Container(
                 decoration: const BoxDecoration(
@@ -373,6 +415,53 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildTitresSectionHeader() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 18, 8, 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Row(
+              children: [
+                const Text(
+                  'Tous les titres',
+                  style: TextStyle(
+                    color: AppTheme.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  width: 6,
+                  height: 6,
+                  decoration: const BoxDecoration(
+                    color: AppTheme.accentPurple,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${_allSongs.length}',
+                  style: const TextStyle(
+                    color: AppTheme.greyMuted,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SongSortMenuButton(
+            value: _sortMode,
+            onChanged: _setSortMode,
+          ),
+        ],
       ),
     );
   }

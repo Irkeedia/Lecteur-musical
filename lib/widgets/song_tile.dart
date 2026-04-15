@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/song.dart';
 import '../services/audio_player_service.dart';
 import '../theme/app_theme.dart';
-import 'artwork_widget.dart';
+import 'lazy_song_artwork.dart';
 
 class SongTile extends StatelessWidget {
   final Song song;
@@ -63,8 +63,8 @@ class SongTile extends StatelessWidget {
                     ),
                     const SizedBox(width: 12),
                     // Artwork circulaire
-                    ArtworkWidget(
-                      artwork: song.artwork,
+                    LazySongArtwork(
+                      song: song,
                       size: 44,
                       circular: true,
                     ),

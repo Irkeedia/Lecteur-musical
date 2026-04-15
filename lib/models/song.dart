@@ -8,7 +8,10 @@ class Song {
   final Duration duration;
   final String uri;
   final Uint8List? artwork;
-  
+
+  /// Secondes depuis epoch (MediaStore `date_added`), si disponible.
+  final int? dateAdded;
+
   Song({
     required this.id,
     required this.title,
@@ -17,6 +20,7 @@ class Song {
     required this.duration,
     required this.uri,
     this.artwork,
+    this.dateAdded,
   });
 
   String get durationFormatted {

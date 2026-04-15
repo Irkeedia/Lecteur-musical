@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import '../services/audio_player_service.dart';
 import '../theme/app_theme.dart';
-import 'artwork_widget.dart';
+import 'lazy_song_artwork.dart';
 
-class MiniPlayer extends StatelessWidget {
+class MiniPlayer extends StatefulWidget {
   final AudioPlayerService playerService;
   final VoidCallback onTap;
 
@@ -14,28 +14,39 @@ class MiniPlayer extends StatelessWidget {
   });
 
   @override
+  State<MiniPlayer> createState() => _MiniPlayerState();
+}
+
+class _MiniPlayerState extends State<MiniPlayer> {
+  double _verticalDrag = 0;
+
+  @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: playerService,
+      listenable: widget.playerService,
       builder: (context, _) {
-        final song = playerService.currentSong;
+        final song = widget.playerService.currentSong;
         if (song == null) return const SizedBox.shrink();
 
-        final progress = playerService.duration.inMilliseconds > 0
-            ? playerService.position.inMilliseconds / playerService.duration.inMilliseconds
+        final progress = widget.playerService.duration.inMilliseconds > 0
+            ? widget.playerService.position.inMilliseconds /
+                widget.playerService.duration.inMilliseconds
             : 0.0;
 
         return GestureDetector(
-          onTap: onTap,
-          onHorizontalDragEnd: (details) {
-            if (details.primaryVelocity != null) {
-              if (details.primaryVelocity! < -300) {
-                playerService.next();
-              } else if (details.primaryVelocity! > 300) {
-                playerService.previous();
-              }
-            }
+          onTap: widget.onTap,
+          onVerticalDragUpdate: (d) {
+            _verticalDrag += d.delta.dy;
           },
+          onVerticalDragEnd: (details) {
+            final v = details.primaryVelocity ?? 0;
+            // Vers le haut : ouvrir le plein écran (style Spotify)
+            if (v < -280 || _verticalDrag < -48) {
+              widget.onTap();
+            }
+            _verticalDrag = 0;
+          },
+          onVerticalDragCancel: () => _verticalDrag = 0,
           child: Container(
             margin: const EdgeInsets.fromLTRB(12, 0, 12, 6),
             padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
@@ -62,8 +73,8 @@ class MiniPlayer extends StatelessWidget {
                     // Artwork circulaire
                     Hero(
                       tag: 'artwork_${song.id}',
-                      child: ArtworkWidget(
-                        artwork: song.artwork,
+                      child: LazySongArtwork(
+                        song: song,
                         size: 44,
                         circular: true,
                       ),
@@ -71,7 +82,18 @@ class MiniPlayer extends StatelessWidget {
                     const SizedBox(width: 12),
                     // Titre & artiste
                     Expanded(
-                      child: Column(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onHorizontalDragEnd: (details) {
+                          if (details.primaryVelocity != null) {
+                            if (details.primaryVelocity! < -300) {
+                              widget.playerService.next();
+                            } else if (details.primaryVelocity! > 300) {
+                              widget.playerService.previous();
+                            }
+                          }
+                        },
+                        child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -97,16 +119,17 @@ class MiniPlayer extends StatelessWidget {
                           ),
                         ],
                       ),
+                      ),
                     ),
                     // Contrôles
                     _buildSmallButton(
                       icon: Icons.skip_previous,
-                      onPressed: playerService.previous,
+                      onPressed: widget.playerService.previous,
                     ),
                     const SizedBox(width: 4),
                     // Play/Pause avec gradient
                     GestureDetector(
-                      onTap: playerService.togglePlayPause,
+                      onTap: widget.playerService.togglePlayPause,
                       child: Container(
                         width: 38,
                         height: 38,
@@ -119,7 +142,7 @@ class MiniPlayer extends StatelessWidget {
                           ),
                         ),
                         child: Icon(
-                          playerService.isPlaying
+                          widget.playerService.isPlaying
                               ? Icons.pause
                               : Icons.play_arrow,
                           color: AppTheme.white,
@@ -130,7 +153,7 @@ class MiniPlayer extends StatelessWidget {
                     const SizedBox(width: 4),
                     _buildSmallButton(
                       icon: Icons.skip_next,
-                      onPressed: playerService.next,
+                      onPressed: widget.playerService.next,
                     ),
                   ],
                 ),

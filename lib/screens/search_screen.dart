@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/song.dart';
+import '../models/song_sort.dart';
 import '../services/audio_player_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/song_tile.dart';
@@ -298,10 +299,10 @@ class _SearchScreenState extends State<SearchScreen> {
           widget.playerService.playSong(shuffled.first, shuffled);
         }
         break;
-      case 1: // Récents (jouer les derniers ajoutés)
+      case 1: // Récents (ordre date d'ajout la plus récente d'abord)
         if (widget.allSongs.isNotEmpty) {
-          final reversed = List<Song>.from(widget.allSongs.reversed);
-          widget.playerService.playSong(reversed.first, reversed);
+          final recent = sortSongs(widget.allSongs, SongSortMode.dateAddedDesc);
+          widget.playerService.playSong(recent.first, recent);
         }
         break;
       case 2: // Par artiste — trigger une recherche

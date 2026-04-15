@@ -2,9 +2,10 @@ import 'dart:ui';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models/song.dart';
+import '../models/song_sort.dart';
 import '../services/audio_player_service.dart';
 import '../theme/app_theme.dart';
-import '../widgets/artwork_widget.dart';
+import '../widgets/lazy_song_artwork.dart';
 
 class PlayerScreen extends StatefulWidget {
   final AudioPlayerService playerService;
@@ -75,15 +76,6 @@ class _PlayerScreenState extends State<PlayerScreen>
           body: Stack(
             fit: StackFit.expand,
             children: [
-              // ─── Fond : artwork flouté + navy overlay ────────
-              if (song.artwork != null)
-                Positioned.fill(
-                  child: Image.memory(
-                    song.artwork!,
-                    fit: BoxFit.cover,
-                    gaplessPlayback: true,
-                  ),
-                ),
               Positioned.fill(
                 child: BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 100, sigmaY: 100),
@@ -109,6 +101,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               SafeArea(
                 child: Column(
                   children: [
+                    _buildDismissHandle(context),
                     _buildTopBar(context, song),
                     const Spacer(flex: 1),
                     _buildDiscArtwork(song),
@@ -128,6 +121,32 @@ class _PlayerScreenState extends State<PlayerScreen>
           ),
         );
       },
+    );
+  }
+
+  /// Glisser vers le bas pour fermer (comme Spotify).
+  Widget _buildDismissHandle(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onVerticalDragEnd: (details) {
+        final v = details.primaryVelocity ?? 0;
+        if (v > 240) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: Padding(
+        padding: const EdgeInsets.only(top: 4, bottom: 12),
+        child: Center(
+          child: Container(
+            width: 42,
+            height: 5,
+            decoration: BoxDecoration(
+              color: AppTheme.greyMuted.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(3),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -268,31 +287,11 @@ class _PlayerScreenState extends State<PlayerScreen>
                     ],
                   ),
                   child: ClipOval(
-                    child: song.artwork != null
-                        ? Image.memory(
-                            song.artwork!,
-                            fit: BoxFit.cover,
-                            gaplessPlayback: true,
-                            width: discSize,
-                            height: discSize,
-                          )
-                        : Container(
-                            decoration: const BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [
-                                  AppTheme.surfaceElevated,
-                                  AppTheme.surface,
-                                ],
-                              ),
-                            ),
-                            child: Icon(
-                              Icons.music_note,
-                              color: AppTheme.accentPurple,
-                              size: discSize * 0.35,
-                            ),
-                          ),
+                    child: LazySongArtwork(
+                      song: song,
+                      size: discSize,
+                      circular: true,
+                    ),
                   ),
                 ),
               ],
@@ -562,122 +561,155 @@ class _PlayerScreenState extends State<PlayerScreen>
                 maxChildSize: 0.85,
                 expand: false,
                 builder: (context, scrollController) {
-                  return Column(
-                    children: [
-                      const SizedBox(height: 12),
-                      Container(
-                        width: 36,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: AppTheme.greyDark,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      ShaderMask(
-                        shaderCallback: (bounds) =>
-                            AppTheme.accentGradient.createShader(bounds),
-                        child: const Text(
-                          'File d\'attente',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${widget.playerService.playlist.length} titres',
-                        style: const TextStyle(color: AppTheme.greyMuted, fontSize: 13),
-                      ),
-                      const SizedBox(height: 16),
-                      Expanded(
-                        child: ListView.builder(
-                          controller: scrollController,
-                          padding: const EdgeInsets.only(bottom: 16),
-                          itemCount: widget.playerService.playlist.length,
-                          itemBuilder: (context, index) {
-                            final song = widget.playerService.playlist[index];
-                            final isActive = index == widget.playerService.currentIndex;
-                            return Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                onTap: () {
-                                  widget.playerService.playAtIndex(index);
-                                  Navigator.pop(context);
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 20,
-                                    vertical: 10,
-                                  ),
-                                  decoration: isActive
-                                      ? BoxDecoration(
-                                          gradient: AppTheme.pillGradient,
-                                          borderRadius: BorderRadius.circular(12),
-                                        )
-                                      : null,
-                                  margin: isActive
-                                      ? const EdgeInsets.symmetric(horizontal: 12, vertical: 2)
-                                      : EdgeInsets.zero,
-                                  child: Row(
-                                    children: [
-                                      ArtworkWidget(
-                                        artwork: song.artwork,
-                                        size: 44,
-                                        borderRadius: 22,
-                                        circular: true,
-                                      ),
-                                      const SizedBox(width: 14),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              song.title,
-                                              style: TextStyle(
-                                                color: AppTheme.white,
-                                                fontWeight: isActive
-                                                    ? FontWeight.w600
-                                                    : FontWeight.w400,
-                                                fontSize: 14,
-                                              ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              song.artistDisplay,
-                                              style: const TextStyle(
-                                                color: AppTheme.greyMuted,
-                                                fontSize: 12,
-                                              ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      if (isActive)
-                                        ShaderMask(
-                                          shaderCallback: (bounds) =>
-                                              AppTheme.accentGradient.createShader(bounds),
-                                          child: const Icon(
-                                            Icons.equalizer,
-                                            color: Colors.white,
-                                            size: 20,
-                                          ),
-                                        ),
-                                    ],
+                  var queueMenuMode = SongSortMode.titleAsc;
+                  return StatefulBuilder(
+                    builder: (context, setModalState) {
+                      return ListenableBuilder(
+                        listenable: widget.playerService,
+                        builder: (context, _) {
+                          return Column(
+                            children: [
+                              const SizedBox(height: 12),
+                              Container(
+                                width: 36,
+                                height: 4,
+                                decoration: BoxDecoration(
+                                  color: AppTheme.greyDark,
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+                              ShaderMask(
+                                shaderCallback: (bounds) =>
+                                    AppTheme.accentGradient.createShader(bounds),
+                                child: const Text(
+                                  'File d\'attente',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
                               ),
-                            );
-                          },
-                        ),
-                      ),
-                    ],
+                              const SizedBox(height: 4),
+                              Text(
+                                '${widget.playerService.playlist.length} titres',
+                                style: const TextStyle(color: AppTheme.greyMuted, fontSize: 13),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(20, 12, 8, 8),
+                                child: Row(
+                                  children: [
+                                    const Expanded(
+                                      child: Text(
+                                        'Ordre de lecture : haut → bas',
+                                        style: TextStyle(color: AppTheme.greyMuted, fontSize: 12),
+                                      ),
+                                    ),
+                                    SongSortMenuButton(
+                                      value: queueMenuMode,
+                                      onChanged: (m) {
+                                        queueMenuMode = m;
+                                        setModalState(() {});
+                                        final sorted = sortSongs(
+                                          List<Song>.from(widget.playerService.playlist),
+                                          m,
+                                        );
+                                        widget.playerService.applyQueueReorderIfSameTracks(sorted);
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Expanded(
+                                child: ListView.builder(
+                                  controller: scrollController,
+                                  padding: const EdgeInsets.only(bottom: 16),
+                                  itemCount: widget.playerService.playlist.length,
+                                  itemBuilder: (context, index) {
+                                    final song = widget.playerService.playlist[index];
+                                    final isActive = index == widget.playerService.currentIndex;
+                                    return Material(
+                                      color: Colors.transparent,
+                                      child: InkWell(
+                                        onTap: () {
+                                          widget.playerService.playAtIndex(index);
+                                          Navigator.pop(context);
+                                        },
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 20,
+                                            vertical: 10,
+                                          ),
+                                          decoration: isActive
+                                              ? BoxDecoration(
+                                                  gradient: AppTheme.pillGradient,
+                                                  borderRadius: BorderRadius.circular(12),
+                                                )
+                                              : null,
+                                          margin: isActive
+                                              ? const EdgeInsets.symmetric(horizontal: 12, vertical: 2)
+                                              : EdgeInsets.zero,
+                                          child: Row(
+                                            children: [
+                                              LazySongArtwork(
+                                                song: song,
+                                                size: 44,
+                                                circular: true,
+                                              ),
+                                              const SizedBox(width: 14),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      song.title,
+                                                      style: TextStyle(
+                                                        color: AppTheme.white,
+                                                        fontWeight: isActive
+                                                            ? FontWeight.w600
+                                                            : FontWeight.w400,
+                                                        fontSize: 14,
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                    ),
+                                                    const SizedBox(height: 2),
+                                                    Text(
+                                                      song.artistDisplay,
+                                                      style: const TextStyle(
+                                                        color: AppTheme.greyMuted,
+                                                        fontSize: 12,
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              if (isActive)
+                                                ShaderMask(
+                                                  shaderCallback: (bounds) =>
+                                                      AppTheme.accentGradient.createShader(bounds),
+                                                  child: const Icon(
+                                                    Icons.equalizer,
+                                                    color: Colors.white,
+                                                    size: 20,
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      );
+                    },
                   );
                 },
               ),

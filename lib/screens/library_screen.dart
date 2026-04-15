@@ -1,14 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:on_audio_query/on_audio_query.dart';
 import '../models/song.dart';
+import '../models/song_sort.dart';
 import '../services/audio_player_service.dart';
+import '../services/music_library_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/song_tile.dart';
+import 'playlist_tracks_screen.dart';
 
 class LibraryScreen extends StatefulWidget {
   final AudioPlayerService playerService;
   final List<Song> allSongs;
   final Map<String, List<Song>> albums;
   final VoidCallback onRefresh;
+  final SongSortMode sortMode;
+  final ValueChanged<SongSortMode> onSortChanged;
 
   const LibraryScreen({
     super.key,
@@ -16,6 +22,8 @@ class LibraryScreen extends StatefulWidget {
     required this.allSongs,
     required this.albums,
     required this.onRefresh,
+    required this.sortMode,
+    required this.onSortChanged,
   });
 
   @override
@@ -23,9 +31,39 @@ class LibraryScreen extends StatefulWidget {
 }
 
 class _LibraryScreenState extends State<LibraryScreen> {
-  int _selectedTab = 0; // 0 = Titres, 1 = Albums, 2 = Artistes
+  int _selectedTab = 0; // 0 Titres, 1 Albums, 2 Artistes, 3 Listes
   String? _expandedAlbum;
   String? _expandedArtist;
+
+  final MusicLibraryService _musicLib = MusicLibraryService();
+  late Future<List<PlaylistModel>> _playlistsFuture;
+
+  /// Tri local des pistes dans un album / artiste (sinon ordre global).
+  final Map<String, SongSortMode> _albumTrackSort = {};
+  final Map<String, SongSortMode> _artistTrackSort = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _playlistsFuture = _musicLib.querySystemPlaylists();
+  }
+
+  void _reloadPlaylists() {
+    setState(() {
+      _playlistsFuture = _musicLib.querySystemPlaylists();
+    });
+  }
+
+  void _onHeaderRefresh() {
+    _reloadPlaylists();
+    widget.onRefresh();
+  }
+
+  SongSortMode _modeForAlbum(String albumName) =>
+      _albumTrackSort[albumName] ?? widget.sortMode;
+
+  SongSortMode _modeForArtist(String artistName) =>
+      _artistTrackSort[artistName] ?? widget.sortMode;
 
   // Groupé par artiste
   Map<String, List<Song>> get _artists {
@@ -76,7 +114,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ),
               const SizedBox(width: 10),
               GestureDetector(
-                onTap: widget.onRefresh,
+                onTap: _onHeaderRefresh,
                 child: Container(
                   width: 36,
                   height: 36,
@@ -114,7 +152,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ? _buildTitresList()
               : _selectedTab == 1
                   ? _buildAlbumsList()
-                  : _buildArtistsList(),
+                  : _selectedTab == 2
+                      ? _buildArtistsList()
+                      : _buildPlaylistsTab(),
         ),
       ],
     );
@@ -122,9 +162,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   // ─── Tab Bar ────────────────────────────────────────────────
   Widget _buildTabBar() {
-    final tabs = ['Titres', 'Albums', 'Artistes'];
+    final tabs = ['Titres', 'Albums', 'Artistes', 'Listes'];
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Container(
         height: 40,
         decoration: BoxDecoration(
@@ -150,9 +190,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     tabs[i],
                     style: TextStyle(
                       color: isActive ? AppTheme.white : AppTheme.greyMuted,
-                      fontSize: 13,
+                      fontSize: 11,
                       fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ),
@@ -190,18 +232,248 @@ class _LibraryScreenState extends State<LibraryScreen> {
     if (widget.allSongs.isEmpty) {
       return _buildEmpty('Aucun titre');
     }
-    return ListView.builder(
-      padding: const EdgeInsets.only(top: 4, bottom: 16),
-      physics: const BouncingScrollPhysics(),
-      itemCount: widget.allSongs.length,
-      itemBuilder: (context, index) {
-        return SongTile(
-          song: widget.allSongs[index],
-          playlist: widget.allSongs,
-          playerService: widget.playerService,
-          index: index,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 8, 8),
+          child: Row(
+            children: [
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Ordre de lecture',
+                      style: TextStyle(color: AppTheme.greyMuted, fontSize: 11, fontWeight: FontWeight.w500),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Du haut vers le bas, comme Spotify',
+                      style: TextStyle(color: AppTheme.softWhite, fontSize: 12, fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
+              ),
+              SongSortMenuButton(
+                value: widget.sortMode,
+                onChanged: widget.onSortChanged,
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.only(top: 4, bottom: 16),
+            physics: const BouncingScrollPhysics(),
+            itemCount: widget.allSongs.length,
+            itemBuilder: (context, index) {
+              return SongTile(
+                song: widget.allSongs[index],
+                playlist: widget.allSongs,
+                playerService: widget.playerService,
+                index: index,
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ─── Onglet Listes (playlists système + dossier Download) ───
+  Widget _buildPlaylistsTab() {
+    return FutureBuilder<List<PlaylistModel>>(
+      future: _playlistsFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(color: AppTheme.accentPurple),
+          );
+        }
+        final systemLists = snapshot.data ?? [];
+        return ListView(
+          padding: const EdgeInsets.only(top: 8, bottom: 24),
+          physics: const BouncingScrollPhysics(),
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+              child: Text(
+                'Ouvre une liste : le tri s’applique à l’affichage et à la lecture.',
+                style: TextStyle(color: AppTheme.greyMuted.withValues(alpha: 0.9), fontSize: 12),
+              ),
+            ),
+            _buildFolderListTile(
+              title: 'Dossier Téléchargements',
+              subtitle: 'Musique dans le dossier Download',
+              icon: Icons.download_rounded,
+              onTap: () => _openDownloadFolder(context),
+            ),
+            ...systemLists.map((pl) => _buildSystemPlaylistTile(context, pl)),
+          ],
         );
       },
+    );
+  }
+
+  Widget _buildFolderListTile({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            decoration: BoxDecoration(
+              color: AppTheme.surfaceLight.withValues(alpha: 0.35),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: AppTheme.surface,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, color: AppTheme.accentPurple, size: 26),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          color: AppTheme.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        style: TextStyle(color: AppTheme.greyMuted, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right, color: AppTheme.greyMuted, size: 22),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openDownloadFolder(BuildContext context) async {
+    final path = await _musicLib.resolveDownloadFolderPath();
+    if (path == null) return;
+    final songs = await _musicLib.getSongsFromFolder(path);
+    if (!context.mounted) return;
+    if (songs.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Aucun fichier audio dans Téléchargements')),
+      );
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (ctx) => PlaylistTracksScreen(
+          title: 'Téléchargements',
+          songs: songs,
+          playerService: widget.playerService,
+          initialSortMode: widget.sortMode,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSystemPlaylistTile(BuildContext context, PlaylistModel pl) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _openSystemPlaylist(context, pl),
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            decoration: BoxDecoration(
+              color: AppTheme.surfaceLight.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    gradient: AppTheme.accentGradient,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.queue_music, color: Colors.white, size: 24),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        pl.playlist,
+                        style: const TextStyle(
+                          color: AppTheme.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${pl.numOfSongs} titre${pl.numOfSongs > 1 ? 's' : ''}',
+                        style: TextStyle(color: AppTheme.greyMuted, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right, color: AppTheme.greyMuted, size: 22),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openSystemPlaylist(BuildContext context, PlaylistModel pl) async {
+    final songs = await _musicLib.getSongsFromPlaylist(pl.id);
+    if (!context.mounted) return;
+    if (songs.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('La playlist « ${pl.playlist} » est vide')),
+      );
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (ctx) => PlaylistTracksScreen(
+          title: pl.playlist,
+          songs: songs,
+          playerService: widget.playerService,
+          initialSortMode: widget.sortMode,
+        ),
+      ),
     );
   }
 
@@ -219,6 +491,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
         final entry = albumEntries[index];
         final albumName = entry.key;
         final songs = entry.value;
+        final trackSort = _modeForAlbum(albumName);
+        final displaySongs = sortSongs(songs, trackSort);
         final isExpanded = _expandedAlbum == albumName;
         final artwork = songs.firstWhere(
           (s) => s.artwork != null,
@@ -288,10 +562,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
                           ],
                         ),
                       ),
-                      // Play all
+                      // Play all (ordre = displaySongs)
                       GestureDetector(
                         onTap: () {
-                          widget.playerService.playSong(songs.first, songs);
+                          widget.playerService.playSong(displaySongs.first, displaySongs);
                         },
                         child: Container(
                           width: 34,
@@ -317,14 +591,36 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   ),
                 ),
               ),
+              if (isExpanded)
+                Padding(
+                  padding: const EdgeInsets.only(left: 16, right: 8, top: 4, bottom: 6),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Ordre des pistes (lecture)',
+                          style: TextStyle(color: AppTheme.greyMuted, fontSize: 11),
+                        ),
+                      ),
+                      SongSortMenuButton(
+                        value: trackSort,
+                        onChanged: (m) {
+                          setState(() => _albumTrackSort[albumName] = m);
+                          final ordered = sortSongs(songs, m);
+                          widget.playerService.applyQueueReorderIfSameTracks(ordered);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
               // Songs expandées
               if (isExpanded)
-                ...songs.asMap().entries.map((e) {
+                ...displaySongs.asMap().entries.map((e) {
                   return Padding(
                     padding: const EdgeInsets.only(left: 30),
                     child: SongTile(
                       song: e.value,
-                      playlist: songs,
+                      playlist: displaySongs,
                       playerService: widget.playerService,
                       index: e.key,
                     ),
@@ -352,6 +648,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
         final entry = artistEntries[index];
         final artistName = entry.key;
         final songs = entry.value;
+        final trackSort = _modeForArtist(artistName);
+        final displaySongs = sortSongs(songs, trackSort);
         final isExpanded = _expandedArtist == artistName;
         final artwork = songs.firstWhere(
           (s) => s.artwork != null,
@@ -408,7 +706,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       ),
                       GestureDetector(
                         onTap: () {
-                          widget.playerService.playSong(songs.first, songs);
+                          widget.playerService.playSong(displaySongs.first, displaySongs);
                         },
                         child: Container(
                           width: 34,
@@ -435,12 +733,34 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 ),
               ),
               if (isExpanded)
-                ...songs.asMap().entries.map((e) {
+                Padding(
+                  padding: const EdgeInsets.only(left: 16, right: 8, top: 4, bottom: 6),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Ordre des pistes (lecture)',
+                          style: TextStyle(color: AppTheme.greyMuted, fontSize: 11),
+                        ),
+                      ),
+                      SongSortMenuButton(
+                        value: trackSort,
+                        onChanged: (m) {
+                          setState(() => _artistTrackSort[artistName] = m);
+                          final ordered = sortSongs(songs, m);
+                          widget.playerService.applyQueueReorderIfSameTracks(ordered);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              if (isExpanded)
+                ...displaySongs.asMap().entries.map((e) {
                   return Padding(
                     padding: const EdgeInsets.only(left: 30),
                     child: SongTile(
                       song: e.value,
-                      playlist: songs,
+                      playlist: displaySongs,
                       playerService: widget.playerService,
                       index: e.key,
                     ),

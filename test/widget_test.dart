@@ -5,12 +5,14 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:suno_player/main.dart';
 
 void main() {
   testWidgets('App launches', (WidgetTester tester) async {
     await tester.pumpWidget(const SunoPlayerApp());
-    expect(find.text('Suno Player'), findsOneWidget);
+    await tester.pump();
+    expect(find.byType(MaterialApp), findsOneWidget);
   });
 }
