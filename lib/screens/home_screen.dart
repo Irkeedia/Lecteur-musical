@@ -1,8 +1,12 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../models/song.dart';
 import '../models/song_sort.dart';
 import '../services/audio_player_service.dart';
 import '../services/music_library_service.dart';
+import '../services/sort_preferences.dart';
 import '../theme/app_theme.dart';
 import '../widgets/song_tile.dart';
 import '../widgets/lazy_song_artwork.dart';
@@ -39,7 +43,22 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     );
-    _loadSongs();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (Platform.isAndroid) {
+        final n = await Permission.notification.status;
+        if (n.isDenied || n.isLimited) {
+          await Permission.notification.request();
+        }
+      }
+      await _restoreSortAndLoad();
+    });
+  }
+
+  Future<void> _restoreSortAndLoad() async {
+    final saved = await loadSavedSortMode();
+    if (!mounted) return;
+    setState(() => _sortMode = saved);
+    await _loadSongs();
   }
 
   Future<void> _loadSongs() async {
@@ -80,13 +99,14 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     return albums;
   }
 
-  void _setSortMode(SongSortMode mode) {
+  Future<void> _setSortMode(SongSortMode mode) async {
     if (mode == _sortMode) return;
     setState(() {
       _sortMode = mode;
       _allSongs = sortSongs(_rawSongs, _sortMode);
       _albums = _groupAlbums(_allSongs);
     });
+    await saveSortMode(mode);
     widget.playerService.applyQueueReorderIfSameTracks(_allSongs);
   }
 
